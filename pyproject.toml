@@ -1,0 +1,21 @@
+[project]
+name = "panel-models-temp2"
+version = "0.1.2"
+description = ""
+authors = [
+    {name = "Your Name",email = "you@example.com"}
+]
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.11"
+dependencies = [
+]
+
+[tool.poetry]
+packages = [
+    { include = "panelmodels", from = "src" }
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
