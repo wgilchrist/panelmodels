@@ -11,57 +11,9 @@ class FixedEffectsParams:
     fe: np.array
     coeffs: np.array
 
-class _GroupMapper:
-
-    def __init__(self):
-        self._mapping = {}
-        self._inv_mapping = {}
-        self.max_id = 0
-
-    def fit_transform(self, group_ids: np.array):
-        self.inp_dtype = group_ids.dtype
-        trfm_group_ids = np.empty(group_ids.shape, dtype=int)
-        for pos, id_ in enumerate(group_ids):
-            if id_ not in self._mapping:
-                self._mapping[id_] = self.max_id
-                self._inv_mapping[self.max_id] = id_
-                self.max_id += 1
-            
-            trfm_group_ids[pos] = self._mapping[id_]
-        
-        return trfm_group_ids
-
-    def transform(self, group_ids):
-        if not hasattr(self, "inp_dtype"):
-            raise ValueError("transform called before fit_transform")
-        
-        trfm_group_ids = np.empty(len(group_ids), dtype=int)
-        for i, id_ in enumerate(group_ids):
-            try:
-                trfm_group_ids[i] = self._mapping[id_]
-            except KeyError:
-                raise KeyError(f"Unknown group id encountered: {id_!r}")
-
-        return trfm_group_ids
-
-    def inv_transform(self, trfm_group_ids):
-        if not hasattr(self, "inp_dtype"):
-            raise ValueError("inv_transform called before fit_transform")
-        
-        group_ids = np.empty(len(trfm_group_ids), self.inp_dtype)
-        for i, id_ in enumerate(trfm_group_ids):
-            try:
-                group_ids[i] = self._inv_mapping[id_]
-            except KeyError:
-                raise KeyError(f"Unknown mapped id encountered: {id_!r}")
-
-        return group_ids
-
-
 class _FixedEffectsGLM(ABC):
 
     def __init__(self):
-        self._group_mapper = _GroupMapper()
         self._params = None
 
     @abstractmethod
@@ -83,21 +35,22 @@ class _FixedEffectsGLM(ABC):
         
         raise ValueError("Fit model before accessing parameters")
     
-    def fit(self, X, y, group_ids, max_iters: int = 1000, tol:int = 1e-12):
-        
-        X = np.hstack([np.ones((len(X), 1)), X])
-        
-        beta = fit_glm_fe(
+    def fit(self, X, y, group_ids, max_iters: int = 200, tol: int = 1e-12):
+
+        assert group_ids.dtype == int
+        assert set(group_ids) == set(range(group_ids.max()+1))      
+
+        alpha, beta = fit_glm_fe(
             self._link,
             self._inv_link,
             self._variance,
             X,
             y,
+            group_ids,
             max_iters,
             tol
         )
-        fe, coeffs = beta[0], beta[1:]
-        self._params = FixedEffectsParams(fe=fe, coeffs=coeffs)
+        self._params = FixedEffectsParams(fe=alpha, coeffs=beta)
     
     def predict(self, X, group_ids):
         fe, coeffs = self.params.fe, self.params.coeffs

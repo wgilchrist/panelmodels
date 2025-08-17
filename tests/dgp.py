@@ -8,7 +8,6 @@ class BaseDGP(ABC):
         self.fe = fe
         self.rng = np.random.default_rng(seed)
     
-    
     @abstractmethod
     def _inv_link(self, mu):
         pass
@@ -23,12 +22,7 @@ class BaseDGP(ABC):
         assert group_ids.max() + 1 <= len(self.fe)
         assert len(group_ids) == n
 
-        eta = np.zeros(n, dtype=float)
-        for i in range(len(eta)):
-            g = group_ids[i]
-            eta[i] += self.fe[g]
-
-        eta += X @ self.coeffs
+        eta = self.fe[group_ids] + X @ self.coeffs
         mu = self._inv_link(eta)
         return self._distribution(mu)
 
