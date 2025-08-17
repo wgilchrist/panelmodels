@@ -8,6 +8,7 @@ from .solver import fit_glm_fe
 
 @dataclass
 class FixedEffectsParams:
+    fe: np.array
     coeffs: np.array
 
 class _GroupMapper:
@@ -61,6 +62,7 @@ class _FixedEffectsGLM(ABC):
 
     def __init__(self):
         self._group_mapper = _GroupMapper()
+        self._params = None
 
     @abstractmethod
     def _link(mu):
@@ -81,9 +83,8 @@ class _FixedEffectsGLM(ABC):
         
         raise ValueError("Fit model before accessing parameters")
     
-    def fit(self, X, y, group_ids, max_iters: int = 1000, tol:int = 1e-8):
+    def fit(self, X, y, group_ids, max_iters: int = 1000, tol:int = 1e-12):
         
-        group_ids = self._group_mapper.fit_transform(group_ids)
         X = np.hstack([np.ones((len(X), 1)), X])
         
         beta = fit_glm_fe(
@@ -95,11 +96,12 @@ class _FixedEffectsGLM(ABC):
             max_iters,
             tol
         )
-        self._params = FixedEffectsParams(coeffs=beta)
+        fe, coeffs = beta[0], beta[1:]
+        self._params = FixedEffectsParams(fe=fe, coeffs=coeffs)
     
     def predict(self, X, group_ids):
-        X = np.hstack([np.ones((len(X), 1)), X])
-        eta = X @ self.params.coeffs
+        fe, coeffs = self.params.fe, self.params.coeffs
+        eta = fe[group_ids] + X @ coeffs
         return self._inv_link(eta)
 
 
@@ -122,3 +124,46 @@ class FixedEffectsLinear(_FixedEffectsGLM):
     @nb.njit
     def _variance(mu):
         return np.ones_like(mu)
+    
+class FixedEffectsPoisson(_FixedEffectsGLM):
+
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    @nb.njit
+    def _link(mu):
+        return np.log(np.maximum(mu, 1e-8))
+    
+    @staticmethod
+    @nb.njit
+    def _inv_link(eta):
+        return np.exp(np.minimum(eta, 700))
+    
+    @staticmethod
+    @nb.njit
+    def _variance(mu):
+        return np.maximum(mu, 1e-8)
+    
+class FixedEffectsBernoulli(_FixedEffectsGLM):
+
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    @nb.njit
+    def _link(mu):
+        mu_clipped = np.clip(mu, 1e-8, 1 - 1e-8)
+        return np.log(mu_clipped / (1 - mu_clipped))
+    
+    @staticmethod
+    @nb.njit
+    def _inv_link(eta):
+        eta_clipped = np.clip(eta, -700, 700)
+        return 1 / (1 + np.exp(-eta_clipped))
+    
+    @staticmethod
+    @nb.njit
+    def _variance(mu):
+        mu_clipped = np.clip(mu, 1e-8, 1 - 1e-8)
+        return mu_clipped * (1-mu_clipped)

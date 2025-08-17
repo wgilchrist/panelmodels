@@ -1,23 +1,50 @@
-from panelmodels.api import (
-    FixedEffectsLinear,
-    _FixedEffectsGLM
-)
 from dataclasses import dataclass
 import numpy as np
 import pytest
 
+from panelmodels.api import (
+    _FixedEffectsGLM,
+    FixedEffectsLinear,
+    FixedEffectsPoisson,
+    FixedEffectsBernoulli
+)
+from dgp import(
+    BaseDGP,
+    LinearDGP,
+    PoissonDGP,
+    BernoulliDGP
+)
+
 @dataclass
 class TestCase:
-    cls: _FixedEffectsGLM
+    model: _FixedEffectsGLM
+    dgp: BaseDGP
     n_observations: int
     n_features: int
-    coeffs: np.array
     atol: float
     rtol: float
 
+N, D = 1_000_000, 10
+COEFFS = np.arange(D, dtype=float)
+FE = np.array([0])
+ATOL, RTOL = .05, 0.
 
 CASES = (
-    TestCase(FixedEffectsLinear, 1000, 10, np.arange(11, dtype=float), 1e-3, 0),
+    TestCase(
+        FixedEffectsLinear(),
+        LinearDGP(COEFFS, FE, scale=0.01),
+        N, D, ATOL, RTOL
+    ),
+    TestCase(
+        FixedEffectsPoisson(),
+        PoissonDGP(COEFFS, FE),
+        N, D, ATOL, RTOL
+    ),
+    TestCase(
+        FixedEffectsBernoulli(),
+        BernoulliDGP(COEFFS, FE),
+        N, D, ATOL, RTOL
+    )
 )
 
 @pytest.fixture(params=CASES)
@@ -25,24 +52,19 @@ def case(request):
     return request.param
 
 def test_estimates(case: TestCase):
-    model = case.cls()
 
+    X = np.random.normal(loc=0, scale=.1, size=(case.n_observations, case.n_features))
     group_ids = np.zeros(case.n_observations, dtype=int)
-    X = np.random.normal(size=(case.n_observations, case.n_features))
-    X_const = np.hstack([np.ones((case.n_observations, 1)), X])
-    e = np.random.normal(scale = .01, size = case.n_observations)
+    y = case.dgp.draw(X, group_ids)    
 
-    eta = X_const @ case.coeffs
-    y = model._inv_link(eta) + e
-
-    model.fit(X, y, group_ids)
+    case.model.fit(X, y, group_ids)
 
     np.testing.assert_allclose(
-        model.params.coeffs,
-        case.coeffs,
+        case.model.params.coeffs,
+        case.dgp.coeffs,
         atol = case.atol,
         rtol = case.rtol
     )
 
 if __name__ == "__main__":
-    test_estimates(CASES[0])
+    test_estimates(CASES[2])

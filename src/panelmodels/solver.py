@@ -26,6 +26,7 @@ def fit_glm_fe(
         beta_new = np.linalg.solve(XTWX, XTWz)
 
         if np.max(np.abs(beta_new - beta)) < tol:
+            print(f"Stopped early: {iter_}/{max_iters}")
             break
 
         beta = beta_new
