@@ -82,8 +82,8 @@ class FixedEffectsLinear(_FixedEffectsGLM):
     
 class FixedEffectsPoisson(_FixedEffectsGLM):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @staticmethod
     @nb.njit
@@ -102,8 +102,8 @@ class FixedEffectsPoisson(_FixedEffectsGLM):
     
 class FixedEffectsBernoulli(_FixedEffectsGLM):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @staticmethod
     @nb.njit
