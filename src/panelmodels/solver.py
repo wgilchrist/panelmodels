@@ -40,6 +40,10 @@ def _profile_alpha(
     return alpha + score / info
 
 @nb.njit
+def _soft_threshold(x: np.ndarray, lambda_: float) -> np.ndarray:
+    return np.sign(x) * np.maximum(np.abs(x) - lambda_, 0)
+
+@nb.njit
 def _profile_beta(
     alpha: np.array,
     beta: np.array,
@@ -48,6 +52,7 @@ def _profile_beta(
     group_ids: np.array,
     inv_link: FunctionType,
     variance: FunctionType,
+    l1: float
 ):
     offset = _broadcast_alpha(alpha, group_ids)
     eta = offset + X @ beta
@@ -56,8 +61,12 @@ def _profile_beta(
     W = v
 
     z = eta + (y - mu) / W
+
+    g = (X.T * W) @ (z - offset)
+    h = (X.T * W) @ X
     
-    return np.linalg.solve((X.T * W) @ X, (X.T * W) @ (z - offset))   
+    beta = np.linalg.solve(h, g)  
+    return _soft_threshold(beta, l1) 
 
 def fit_glm_fe(
         link: FunctionType,
@@ -67,9 +76,13 @@ def fit_glm_fe(
         y: np.array,
         group_ids: np.array,
         max_iters: int,
-        tol: float
+        tol: float,
+        l1: float
 ):  
     n, d = X.shape
+    X_mu, X_sigma = X.mean(axis=0), X.std(axis=0)
+    X_std = (X - X_mu) / X_sigma
+
     g = group_ids.max() + 1
     beta = np.zeros(d, dtype=float)
     alpha = np.zeros(g, dtype=float)
@@ -79,8 +92,8 @@ def fit_glm_fe(
         alpha_old = alpha
         beta_old = beta
 
-        alpha = _profile_alpha(alpha, beta, X, y, group_ids, inv_link, variance)
-        beta = _profile_beta(alpha, beta, X, y, group_ids, inv_link, variance)
+        alpha = _profile_alpha(alpha, beta, X_std, y, group_ids, inv_link, variance)
+        beta = _profile_beta(alpha, beta, X_std, y, group_ids, inv_link, variance, l1)
 
         if np.maximum(
             np.max(np.abs(alpha - alpha_old)),
@@ -88,5 +101,5 @@ def fit_glm_fe(
         ) < tol:
             print(f"Stopped early: {iter_}/{max_iters}")
             break
-
-    return alpha, beta
+        
+    return (alpha - beta @ (X_mu / X_sigma)), beta / X_sigma

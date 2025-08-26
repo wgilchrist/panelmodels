@@ -13,7 +13,8 @@ class FixedEffectsParams:
 
 class _FixedEffectsGLM(ABC):
 
-    def __init__(self):
+    def __init__(self, l1: float = 0.0):
+        self.l1 = l1
         self._params = None
 
     @abstractmethod
@@ -48,7 +49,8 @@ class _FixedEffectsGLM(ABC):
             y,
             group_ids,
             max_iters,
-            tol
+            tol,
+            self.l1
         )
         self._params = FixedEffectsParams(fe=alpha, coeffs=beta)
     
@@ -60,8 +62,8 @@ class _FixedEffectsGLM(ABC):
 
 class FixedEffectsLinear(_FixedEffectsGLM):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @staticmethod
     @nb.njit

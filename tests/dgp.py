@@ -27,8 +27,8 @@ class BaseDGP(ABC):
         return self._distribution(mu)
 
 class LinearDGP(BaseDGP):
-    def __init__(self, fe, coeffs, seed=0, scale=1):
-        super().__init__(fe, coeffs, seed)
+    def __init__(self, *args, scale=1, **kwargs):
+        super().__init__(*args, **kwargs)
         self.scale = scale
     def _inv_link(self, eta):
         return eta
@@ -36,16 +36,16 @@ class LinearDGP(BaseDGP):
         return self.rng.normal(mu, self.scale)
     
 class PoissonDGP(BaseDGP):
-    def __init__(self, fe, coeffs, seed=0):
-        super().__init__(fe, coeffs, seed)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
     def _inv_link(self, eta):
         return np.clip(np.exp(eta), None, 1e32)
     def _distribution(self, mu):
         return self.rng.poisson(mu)
     
 class BernoulliDGP(BaseDGP):
-    def __init__(self, fe, coeffs, seed=0):
-        super().__init__(fe, coeffs, seed)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
     def _inv_link(self, eta):
         return 1 / (1 + np.exp(-eta))
     def _distribution(self, mu):

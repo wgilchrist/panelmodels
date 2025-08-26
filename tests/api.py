@@ -83,7 +83,20 @@ CASES = (
         600_000, 10,
         np.inf, 0.,
         0., 0.1
-    )
+    ),
+
+    # Test L1 Regularisation
+    TestCase(
+        FixedEffectsLinear(l1 = .001),
+        LinearDGP(
+            np.arange(0, 2, dtype=float), 
+            np.array([0]),
+            scale=0.01
+        ),
+        1_000_000, 2,
+        np.inf, 0.,
+        0., 0.1
+    ),
 )
 
 @pytest.fixture(params=CASES)
@@ -113,4 +126,4 @@ def test_estimates(case: TestCase):
     )
 
 if __name__ == "__main__":
-    test_estimates(CASES[2])
+    test_estimates(CASES[-1])
