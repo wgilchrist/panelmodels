@@ -40,8 +40,60 @@ def _profile_alpha(
     return alpha + score / info
 
 @nb.njit
+def _profile_alpha(
+    alpha: np.array,
+    beta: np.array,
+    X: np.array,
+    y: np.array,
+    group_ids: np.array,
+    inv_link: FunctionType,
+    variance: FunctionType,
+):  
+    n, d = X.shape
+    g = group_ids.max() + 1
+
+    eta = _broadcast_alpha(alpha, group_ids) + X @ beta
+    mu = inv_link(eta)
+    var = variance(mu)
+
+    score = np.zeros(g)
+    info = np.zeros(g)
+
+    for i in range(n):
+        gid = group_ids[i]
+        score[gid] += (y[i] - mu[i]) / n
+        info[gid] += var[i] / n
+    
+    return alpha + score / info
+
+@nb.njit
 def _soft_threshold(x: np.ndarray, lambda_: float) -> np.ndarray:
     return np.sign(x) * np.maximum(np.abs(x) - lambda_, 0)
+
+@nb.njit
+def _Hv(X, W, v):
+    t = X @ v
+    t *= W
+    return X.T @ t
+
+@nb.njit
+def _estimate_L(X, W, iters=8):
+    d = X.shape[1]
+    v = np.ones(d) / np.sqrt(d)
+    for _ in range(iters):
+        w = _Hv(X, W, v)
+        nrm = np.sqrt((w*w).sum())
+        if nrm == 0.0:
+            return 0.0
+        v = w / nrm
+    
+    Hv = _Hv(X, W, v) # Rayleigh quotient
+    return (v @ Hv)
+
+@nb.njit
+def _objective(eta, z, w):
+    r = eta - z
+    return 0.5 * ((w * r * r)).sum()
 
 @nb.njit
 def _profile_beta(
@@ -52,21 +104,47 @@ def _profile_beta(
     group_ids: np.array,
     inv_link: FunctionType,
     variance: FunctionType,
-    l1: float
+    l1: float,
+    t_init: float
 ):
     offset = _broadcast_alpha(alpha, group_ids)
     eta = offset + X @ beta
     mu = inv_link(eta)
     v = variance(mu)
     W = v
-
     z = eta + (y - mu) / W
 
-    g = (X.T * W) @ (z - offset)
-    h = (X.T * W) @ X
-    
-    beta = np.linalg.solve(h, g)  
-    return _soft_threshold(beta, l1) 
+    f = _objective(eta, z, W)
+    grad = X.T @ (W * (eta - z))
+
+    t = t_init
+    if t <= 0.0:
+        L = _estimate_L(X, W, 8)
+        t = 0.9 / (L + 1e-12)
+
+    # Backtracking line search (monotone)
+    F_curr = f + l1 * np.abs(beta).sum()
+    for _ in range(30):
+        candidate = _soft_threshold(beta - t * grad, t * l1)
+        s = candidate - beta
+
+        eta_c = offset + X @ candidate
+        f_c = _objective(eta_c, z, W)
+
+        # Beck–Teboulle majorization on the smooth part
+        q = f + grad @ s + 0.5 * (s @ s) / t
+        if f_c <= q:
+            # Optional composite monotone guard (uncomment if you want strict monotonicity)
+            # F_cand = f_c + l1 * np.abs(candidate).sum()
+            # if F_cand > F_curr:
+            #     t *= 0.5
+            #     continue
+            beta = candidate
+            t *= 1.1  # mild growth for next call
+            break
+        t *= 0.5
+
+    return beta, t  # (optionally also return t to warm-start next time)
 
 def fit_glm_fe(
         link: FunctionType,
@@ -83,6 +161,7 @@ def fit_glm_fe(
     X_mu, X_sigma = X.mean(axis=0), X.std(axis=0)
     X_std = (X - X_mu) / X_sigma
 
+    t = 0.0
     g = group_ids.max() + 1
     beta = np.zeros(d, dtype=float)
     alpha = np.zeros(g, dtype=float)
@@ -93,7 +172,7 @@ def fit_glm_fe(
         beta_old = beta
 
         alpha = _profile_alpha(alpha, beta, X_std, y, group_ids, inv_link, variance)
-        beta = _profile_beta(alpha, beta, X_std, y, group_ids, inv_link, variance, l1)
+        beta, t = _profile_beta(alpha, beta, X_std, y, group_ids, inv_link, variance, l1, 0.0)
 
         if np.maximum(
             np.max(np.abs(alpha - alpha_old)),
