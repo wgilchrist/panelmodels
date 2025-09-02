@@ -38,7 +38,7 @@ class _FixedEffectsGLM(ABC):
     
     def fit(self, X, y, group_ids, max_iters: int = 200, tol: int = 1e-12):
 
-        assert group_ids.dtype == int
+        assert np.issubdtype(group_ids.dtype, np.integer)
         assert set(group_ids) == set(range(group_ids.max()+1))      
 
         alpha, beta = fit_glm_fe(
