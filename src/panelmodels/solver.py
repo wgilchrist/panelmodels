@@ -13,6 +13,22 @@ def _broadcast_alpha(alpha, group_ids):
     return fe
 
 @nb.njit
+def _init_alpha(y: np.ndarray, group_ids: np.ndarray, link: FunctionType) -> np.ndarray:
+    n = len(y)
+    g = group_ids.max() + 1
+
+    sum_y = np.zeros(g)
+    count = np.zeros(g)
+
+    for i in range(n):
+        gid = group_ids[i]
+        sum_y[gid] += y[i]
+        count[gid] += 1
+
+    av_y = sum_y / count
+    return link(av_y)
+
+@nb.njit
 def _profile_alpha(
     alpha: np.array,
     beta: np.array,
@@ -54,17 +70,15 @@ def _profile_alpha(
 
     eta = _broadcast_alpha(alpha, group_ids) + X @ beta
     mu = inv_link(eta)
-    var = variance(mu)
+    W = var = variance(mu)
 
-    score = np.zeros(g)
-    info = np.zeros(g)
+    z = eta + (y - mu) / W
+    target = z - X @ beta
 
-    for i in range(n):
-        gid = group_ids[i]
-        score[gid] += (y[i] - mu[i]) / n
-        info[gid] += var[i] / n
-    
-    return alpha + score / info
+    num = np.bincount(group_ids, weights=W * target, minlength=g)
+    den = np.bincount(group_ids, weights=W, minlength=g)
+
+    return num / den
 
 @nb.njit
 def _soft_threshold(x: np.ndarray, lambda_: float) -> np.ndarray:
@@ -147,15 +161,15 @@ def _profile_beta(
     return beta, t  # (optionally also return t to warm-start next time)
 
 def fit_glm_fe(
-        link: FunctionType,
-        inv_link: FunctionType,
-        variance: FunctionType,
-        X: np.array,
-        y: np.array,
-        group_ids: np.array,
-        max_iters: int,
-        tol: float,
-        l1: float
+    link: FunctionType,
+    inv_link: FunctionType,
+    variance: FunctionType,
+    X: np.array,
+    y: np.array,
+    group_ids: np.array,
+    max_iters: int,
+    tol: float,
+    l1: float
 ):  
     n, d = X.shape
     X_mu, X_sigma = X.mean(axis=0), X.std(axis=0)
@@ -164,9 +178,11 @@ def fit_glm_fe(
     t = 0.0
     g = group_ids.max() + 1
     beta = np.zeros(d, dtype=float)
-    alpha = np.zeros(g, dtype=float)
+    alpha = _init_alpha(y, group_ids, link)
     
     for iter_ in range(max_iters): 
+
+        print(f"Iteration {iter_+1}/{max_iters}", end="\r")
 
         alpha_old = alpha
         beta_old = beta
@@ -180,5 +196,6 @@ def fit_glm_fe(
         ) < tol:
             print(f"Stopped early: {iter_}/{max_iters}")
             break
-        
+    
+    print()
     return (alpha - beta @ (X_mu / X_sigma)), beta / X_sigma
