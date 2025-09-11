@@ -106,13 +106,16 @@ def case(request):
 def test_estimates(case: TestCase):
 
     X = np.random.normal(loc=0, scale=.1, size=(case.n_observations, case.n_features))
-    group_ids = np.random.randint(0, len(case.dgp.fe), size=(case.n_observations))
-    y = case.dgp.draw(X, group_ids)    
+    gids = np.random.randint(0, len(case.dgp.fe), size=(case.n_observations))
+    y = case.dgp.draw(X, gids)    
 
-    case.model.fit(X, y, group_ids)
+    case.model.fit(X, y, gids)
+
+    unq_gids = np.arange(gids.max()+1)
+    unq_gids_mapped = case.model._map.transform(unq_gids)
 
     np.testing.assert_allclose(
-        case.model.params.fe,
+        case.model.params.fe[unq_gids_mapped],
         case.dgp.fe,
         atol = case.atol_alpha,
         rtol = case.rtol_alpha

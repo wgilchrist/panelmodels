@@ -11,11 +11,53 @@ class FixedEffectsParams:
     fe: np.array
     coeffs: np.array
 
+class _GroupIDMapper:
+
+    def __init__(self):
+        self._map = {}
+        self._inv_map = {}
+
+    def fit_transform(self, group_ids: np.ndarray) -> None:
+        n = len(group_ids)
+        out = np.zeros(n, dtype=int)
+
+        next_id = 0
+        for i, gid in enumerate(group_ids):
+            mapped_gid = self._map.get(gid)
+            if mapped_gid is not None:
+                out[i] = mapped_gid
+            else:
+                out[i] = next_id
+                self._map[gid] = next_id
+                self._inv_map[next_id] = gid
+                next_id += 1
+
+        return out
+    
+    def transform(self, group_ids: np.ndarray) -> np.ndarray:
+        try:
+            return np.array(
+                [self._map[gid] for gid in group_ids],
+                dtype=int
+            )
+        except KeyError as e:
+            raise KeyError("New group id mapping encountered")
+        
+    def inv_transform(self, group_ids: np.ndarray) -> np.ndarray:
+        try:
+            return np.array(
+                [self._inv_map[gid] for gid in group_ids],
+                dtype=int
+            )
+        except KeyError as e:
+            raise KeyError("New group id mapping encountered")
+
 class _FixedEffectsGLM(ABC):
 
     def __init__(self, l1: float = 0.0):
         self.l1 = l1
         self._params = None
+        self._map = _GroupIDMapper()
 
     @abstractmethod
     def _link(mu):
@@ -31,15 +73,13 @@ class _FixedEffectsGLM(ABC):
 
     @property
     def params(self) -> FixedEffectsParams:
-        if self._params is not None:
-            return self._params
-        
-        raise ValueError("Fit model before accessing parameters")
-    
+        if self._params is None:
+            raise ValueError("Fit model before accessing parameters")
+        return self._params
+            
     def fit(self, X, y, group_ids, max_iters: int = 200, tol: int = 1e-12):
 
-        assert np.issubdtype(group_ids.dtype, np.integer)
-        assert set(group_ids) == set(range(group_ids.max()+1))      
+        group_ids = self._map.fit_transform(group_ids)    
 
         alpha, beta = fit_glm_fe(
             self._link,
@@ -55,6 +95,7 @@ class _FixedEffectsGLM(ABC):
         self._params = FixedEffectsParams(fe=alpha, coeffs=beta)
     
     def predict(self, X, group_ids):
+        group_ids = self._map.transform(group_ids)
         fe, coeffs = self.params.fe, self.params.coeffs
         eta = fe[group_ids] + X @ coeffs
         return self._inv_link(eta)

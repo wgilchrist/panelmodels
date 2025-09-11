@@ -134,31 +134,26 @@ def _profile_beta(
     t = t_init
     if t <= 0.0:
         L = _estimate_L(X, W, 8)
-        t = 0.9 / (L + 1e-12)
+        t = 1.0 / (L + 1e-12)
 
     # Backtracking line search (monotone)
     F_curr = f + l1 * np.abs(beta).sum()
     for _ in range(30):
-        candidate = _soft_threshold(beta - t * grad, t * l1)
+        candidate = _soft_threshold(beta - t * grad, l1)
         s = candidate - beta
 
         eta_c = offset + X @ candidate
         f_c = _objective(eta_c, z, W)
 
-        # Beck–Teboulle majorization on the smooth part
+        # Beck–Teboulle majorization
         q = f + grad @ s + 0.5 * (s @ s) / t
         if f_c <= q:
-            # Optional composite monotone guard (uncomment if you want strict monotonicity)
-            # F_cand = f_c + l1 * np.abs(candidate).sum()
-            # if F_cand > F_curr:
-            #     t *= 0.5
-            #     continue
             beta = candidate
-            t *= 1.1  # mild growth for next call
+            t *= 1.1  # promote growth
             break
         t *= 0.5
 
-    return beta, t  # (optionally also return t to warm-start next time)
+    return beta, t
 
 def fit_glm_fe(
     link: FunctionType,
@@ -173,6 +168,7 @@ def fit_glm_fe(
 ):  
     n, d = X.shape
     X_mu, X_sigma = X.mean(axis=0), X.std(axis=0)
+    X_sigma[X_sigma == 0] = 1
     X_std = (X - X_mu) / X_sigma
 
     t = 0.0
@@ -198,4 +194,9 @@ def fit_glm_fe(
             break
     
     print()
-    return (alpha - beta @ (X_mu / X_sigma)), beta / X_sigma
+
+    # handle var(X) = 0 gracefull
+    alpha_out, beta_out = np.zeros_like(alpha), np.zeros_like(beta)
+    beta_out[X_sigma > 0] = beta[X_sigma > 0] / X_sigma
+    alpha_out = alpha - beta_out @ X_mu
+    return alpha_out, beta_out
