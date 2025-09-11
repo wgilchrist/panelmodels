@@ -77,9 +77,12 @@ class _FixedEffectsGLM(ABC):
             raise ValueError("Fit model before accessing parameters")
         return self._params
             
-    def fit(self, X, y, group_ids, max_iters: int = 200, tol: int = 1e-12):
+    def fit(self, X, y, group_ids, weights = None, max_iters: int = 200, tol: int = 1e-12):
 
-        group_ids = self._map.fit_transform(group_ids)    
+        group_ids = self._map.fit_transform(group_ids)   
+
+        if weights is None:
+            weights = np.ones(group_ids.shape, dtype=float) 
 
         alpha, beta = fit_glm_fe(
             self._link,
@@ -88,6 +91,7 @@ class _FixedEffectsGLM(ABC):
             X,
             y,
             group_ids,
+            weights,
             max_iters,
             tol,
             self.l1
